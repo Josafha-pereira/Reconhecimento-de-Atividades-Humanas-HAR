@@ -12,7 +12,7 @@
 
 Projeto desenvolvido para a disciplina de **Processamento Digital de Sinais** na **Universidade Federal do Pará (UFPA)**.
 
-O objetivo é reconhecer automaticamente atividades humanas — **Caminhar**, **Correr** e **Pular** — a partir de um dataset com dados brutos coletados de um acelerômetro, combinando um pipeline completo de **Processamento Digital de Sinais** com modelos de **Aprendizado de Máquina**, visando fazer uma análise a cerca de seus  desempenhos.
+O objetivo é reconhecer por classificação atividades humanas (**Caminhada**, **Corrida** e **Salto**) a partir de um dataset com dados brutos coletados de um acelerômetro, combinando um pipeline completo de **Processamento Digital de Sinais** com modelos de **Aprendizado de Máquina**, visando fazer uma análise acerca de seus desempenhos.
 
 ---
 
@@ -26,12 +26,12 @@ Validação da Taxa de Amostragem (fs ≈ 98.93 Hz)
       │
       ▼
 Filtragem Butterworth em Cascata
-  ├── Passa-Alta  (fc = 0.3 Hz) → remove componente DC da gravidade
-  └── Passa-Baixa (fc = 20 Hz)  → remove ruído de alta frequência
+  ├── Passa-Alta  (fc = 0.3 Hz) → atenua componente DC da gravidade
+  └── Passa-Baixa (fc = 20 Hz)  → atenua ruído de alta frequência
       │
       ▼
 Janelamento Deslizante (Sliding Window)
-  └── Overlap de 75% → captura adequada da classe minoritária (salto)
+  └── Overlap de 75% → aumenta a quantidade de janelas da classe minoritária (salto)
       │
       ▼
 Extração de Características (Feature Engineering)
@@ -39,10 +39,10 @@ Extração de Características (Feature Engineering)
   └── Espectrais:   Pico FFT, Entropia Espectral
       │
       ▼
-Treinamento e Validação (StratifiedKFold, K=5)
+Treinamento e Validação (5 folds por blocos temporais)
   ├── SVM
-  ├── Random Forest
-  └── XGBoost  ← melhor modelo (F1 Macro: 0.83)
+  ├── Random Forest  ← maior F1 Macro médio (0.77)
+  └── XGBoost
 ```
 
 ---
@@ -55,12 +55,12 @@ Treinamento e Validação (StratifiedKFold, K=5)
 | Total de amostras | 4.305 registros              |
 | Taxa de amostragem| ≈ 98.93 Hz                   |
 | Eixos             | X, Y, Z (triaxial)           |
-| Classes           | Caminhar, Correr, Pular      |
+| Classes           | Caminhada, Corrida, Salto    |
 
 **Distribuição das classes:**
-- Caminhar: 2.276 amostras
-- Correr: 1.484 amostras
-- Pular: 545 amostras
+- Caminhada: 2.276 amostras
+- Corrida: 1.484 amostras
+- Salto: 545 amostras
 
 ---
 
@@ -71,15 +71,14 @@ Treinamento e Validação (StratifiedKFold, K=5)
 A análise direta de sinais brutos de acelerômetro é ineficiente pois o sinal é composto por três componentes sobrepostos:
 
 - **Aceleração dinâmica do corpo** → sinal de interesse (0.3 Hz – 20 Hz)
-- **Gravidade estática** → componente DC (~0 Hz), removida pelo filtro passa-alta
-- **Ruído e vibrações espúrias** → altas frequências (>20 Hz), removidas pelo filtro passa-baixa
+- **Gravidade estática** → componente DC (~0 Hz), atenuada pelo filtro passa-alta
+- **Ruído e vibrações espúrias** → altas frequências (>20 Hz), atenuadas pelo filtro passa-baixa
 
 ### Janelamento Deslizante (Sliding Window)
 
-- Segmentação dos sinais filtrados em janelas temporais
-- Overlap de **75%** adotado para maximizar a captura da classe minoritária (salto)
-  - Com 50% de overlap: apenas 8 janelas de salto
-  - Com 75% de overlap: **15 janelas de salto** (evitando colapso do F1 Macro na validação cruzada)
+- Segmentação dos sinais filtrados em janelas temporais, separadamente em cada trecho contínuo de uma mesma atividade
+- Overlap de **75%** adotado para reduzir a chance de um movimento ficar dividido na borda entre janelas e aumentar a quantidade de exemplos da classe minoritária (salto)
+- Foram geradas **125 janelas**: 68 de caminhada, 43 de corrida e 14 de salto
 
 ### Extração de Características
 
@@ -91,25 +90,22 @@ Cada janela é convertida em um vetor de **15 atributos** (5 features × 3 eixos
 | Desvio Padrão       | Temporal   | Intensidade/energia do movimento     |
 | Autocorrelação      | Temporal   | Periodicidade e repetição do padrão  |
 | Pico FFT            | Frequencial| Frequência dominante do movimento    |
-| Entropia Espectral  | Frequencial| Complexidade/irregularidade do sinal |
+| Entropia Espectral  | Frequencial| desorganização do sinal |
 
 ---
 
 ## 🤖 Modelos e Resultados
 
-Validação com **StratifiedKFold (K=5)**, métrica principal: **F1 Macro**.
+Validação com 5 folds formados por blocos temporais dentro de cada classe, removendo do treino janelas que compartilham amostras com a validação. Métrica principal: **F1 Macro**.
 
-| Modelo        | F1 Macro (média) | Característica principal              |
-|---------------|-----------------|---------------------------------------|
-| SVM           | ~0.74           | Dificuldade com sobreposição espectral |
-| Random Forest | ~0.80           | Maior estabilidade (menor variância)  |
-| **XGBoost**   | **~0.83**       | **Melhor teto preditivo**             |
+| Modelo            | F1 Macro (média) | Desvio padrão | Característica principal |
+|-------------------|------------------|---------------|--------------------------|
+| SVM               | 0.68             | 0.189         | Menor desempenho médio |
+| **Random Forest** | **0.77**         | 0.204         | Maior F1 Macro médio |
+| XGBoost           | 0.73             | 0.183         | Desempenho intermediário |
 
-### Análise das Matrizes de Confusão
+A variação entre os folds foi alta nos três modelos.
 
-- **SVM**: comportamento conservador; classificou 12 corridas como caminhadas e acertou apenas 8 de 15 saltos
-- **Random Forest**: mais consistente; melhorou a classificação de corrida e salto em relação ao SVM
-- **XGBoost**: melhor discriminação entre caminhar e correr (40/46 corridas corretas); manteve 10/15 saltos corretos
 
 ---
 
@@ -118,21 +114,23 @@ Validação com **StratifiedKFold (K=5)**, métrica principal: **F1 Macro**.
 ```
 Python 3.x
 ├── numpy
+│   └── fft
 ├── pandas
 ├── matplotlib
 ├── seaborn
 ├── scipy
-│   ├── signal   (filtros Butterworth, FFT)
+│   ├── signal   (filtros Butterworth)
 │   └── stats    (entropia)
 ├── scikit-learn
 │   ├── RandomForestClassifier
 │   ├── SVC
-│   ├── StandardScaler
-│   ├── StratifiedKFold
-│   └── cross_val_score / cross_val_predict
+│   ├── StandardScaler / LabelEncoder
+│   └── f1_score / confusion_matrix
 └── xgboost
     └── XGBClassifier
 ```
+
+Ambiente de desenvolvimento: **VS Code + Jupyter Notebook**, com dependências isoladas em `.venv`.
 
 ---
 
@@ -140,50 +138,70 @@ Python 3.x
 
 **1. Clone o repositório**
 ```bash
-git clone https://github.com/Josafha-Pereira/projeto-har.git
-cd projeto-har
+git clone https://github.com/Josafha-pereira/Reconhecimento-de-Atividades-Humanas-HAR.git
+cd Reconhecimento-de-Atividades-Humanas-HAR
 ```
 
-**2. Instale as dependências**
+**2. Crie o ambiente virtual**
 ```bash
-pip install numpy pandas matplotlib seaborn scipy scikit-learn xgboost
+python3 -m venv .venv
 ```
 
-**3. Adicione o dataset**
+**3. Ative o ambiente**
 
-Coloque o arquivo `05_rotulado.csv` na raiz do projeto. O dataset deve conter as colunas:
-- `time_s` — tempo em segundos
-- `acc_x`, `acc_y`, `acc_z` — aceleração triaxial
-- `comportamento` — rótulo da atividade (Caminhar / Correr / Pular)
-
-**4. Execute**
+Em Bash ou Zsh:
 ```bash
-python projeto_har.py
+source .venv/bin/activate
 ```
 
-> O projeto foi originalmente desenvolvido no **Google Colab**. Para execução local, substituir `display()` por `print()` se necessário.
+No Fish:
+```fish
+source .venv/bin/activate.fish
+```
+
+**4. Instale as dependências**
+```bash
+python -m pip install numpy pandas matplotlib seaborn scipy scikit-learn xgboost ipykernel
+```
+
+**5. Abra o projeto no VS Code**
+```bash
+code .
+```
+
+**6. Execute o notebook**
+
+Abra `notebook/HAR.ipynb`, selecione `.venv/bin/python` como kernel e execute as células em ordem.
+
+O notebook lê o dataset em `dataset/05_rotulado.csv`, portanto a estrutura de pastas deve ser mantida.
 
 ---
 
 ## 📁 Estrutura do Repositório
 
 ```
-projeto-har/
-│
-├── HAR
-│   ├── 05_rotulado.csv      # Dataset
-│   ├── projeto_har.py       # Pipeline completo: PDS + ML    
+Reconhecimento-de-Atividades-Humanas-HAR/
+├── dataset/
+│   └── 05_rotulado.csv
+├── notebook/
+│   └── HAR.ipynb
+├── .gitignore
 └── README.md
 ```
+
+O diretório `.venv/` é criado localmente e não faz parte do repositório.
 
 ---
 
 ## 📌 Conclusões
 
-- A filtragem (Butterworth passa-alta + passa-baixa) isolou com êxito a aceleração corporal pura, eliminando gravidade e ruídos
-- O ajuste do overlap de 50% para **75%** foi de grande importância para o desempenho na classe minoritária (salto)
-- A extração de features estatísticas e espectrais gerou um **espaço de características com alta separabilidade**
-- O **XGBoost** obteve o melhor desempenho geral (F1 Macro ≈ 0.83), enquanto o **Random Forest** se destacou como a escolha mais robusta e estável para uso em produção
+- A filtragem Butterworth atenuou componentes fora da faixa definida antes do janelamento
+- O overlap de **75%** aumentou a quantidade de janelas da classe salto, mantendo mais exemplos da classe minoritária para avaliação
+- A extração de features estatísticas e espectrais reduziu cada janela de 128 × 3 para **15 características** utilizadas na classificação
+- O **Random Forest** apresentou o maior F1 Macro médio, seguido pelo XGBoost e pelo SVM
+- A variação entre os folds foi alta nos três modelos, mostrando que o desempenho depende do trecho temporal utilizado na validação
+- Para este conjunto de dados e este pipeline de processamento, o **Random Forest** apresentou o melhor desempenho médio na F1 Macro e, apesar da variação alta, a maioria dos seus valores ficou acima de **0.74**
+- A quantidade reduzida de janelas, principalmente da classe salto, ainda limita a estabilidade da avaliação e deve ser considerada
 
 ---
 
